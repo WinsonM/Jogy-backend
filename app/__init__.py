@@ -1,0 +1,1 @@
+"""Jogy Backend Application."""
