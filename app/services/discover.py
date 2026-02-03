@@ -19,11 +19,11 @@ from app.schemas.post import LocationPoint, PostDiscoverRequest, PostDiscoverRes
 class DiscoverService:
     """Service for discover/feed operations with geo-spatial queries."""
 
-    # Scoring weights
-    WEIGHT_LIKES = 0.2
-    WEIGHT_COMMENTS = 0.2
-    WEIGHT_RECENCY = 0.3
-    WEIGHT_DISTANCE = 0.3
+    # Scoring weights (Gravity Model)
+    FACTOR_LIKES = 1.0      # A
+    FACTOR_COMMENTS = 2.0   # B
+    EXP_DISTANCE = 1.5      # C
+    EXP_TIME = 1.2          # Time Decay Power
 
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -80,33 +80,30 @@ class DiscoverService:
         total_result = await self.db.execute(count_query)
         total = total_result.scalar() or 0
 
-        # Apply scoring and ordering
-        # Score = likes * 0.2 + comments * 0.2 + recency * 0.3 + distance * 0.3
-        # Recency = 1 / (1 + hours_since_post)
-        # Distance Score = 1 / (1 + distance_from_center_normalized)
+        # Apply scoring (Gravity Model)
+        # Formula: (Likes * A + Comments * B + 1) / ( (DistanceKM + 1)^C * (AgeHours + 2)^1.2 )
         
-        hours_since = func.extract(
-            "epoch",
-            func.now() - Post.created_at
-        ) / 3600
+        # 1. Age in hours
+        hours_since = func.extract("epoch", func.now() - Post.created_at) / 3600
         
-        # Calculate distance from center (approximate using Euclidean distance on degrees)
-        # ST_Distance returns distance in degrees for geometry types with SRID 4326
-        # We normalize by the viewport diagonal size to make it scale-independent
+        # 2. Distance in KM (Approx 111km per degree)
         center_point = ST_SetSRID(ST_MakePoint(center_lng, center_lat), 4326)
         distance_degrees = func.ST_Distance(Post.location, center_point)
-        
-        # Normalize: viewport diagonal size
-        viewport_diag = math.sqrt(lat_diff**2 + lng_diff**2)
-        # Avoid division by zero
-        normalized_distance = distance_degrees / (viewport_diag if viewport_diag > 0 else 1.0)
+        distance_km = distance_degrees * 111.0 
 
-        score = (
-            Post.likes_count * self.WEIGHT_LIKES +
-            Post.comments_count * self.WEIGHT_COMMENTS +
-            (1.0 / (1.0 + hours_since)) * self.WEIGHT_RECENCY +
-            (1.0 / (1.0 + normalized_distance * 10)) * self.WEIGHT_DISTANCE
+        # 3. Calculate Score
+        numerator = (
+            Post.likes_count * self.FACTOR_LIKES +
+            Post.comments_count * self.FACTOR_COMMENTS + 
+            1.0  # Base score to ensure new posts have visibility
         )
+        
+        denominator = (
+            func.power(distance_km + 1, self.EXP_DISTANCE) * 
+            func.power(hours_since + 2, self.EXP_TIME)
+        )
+
+        score = numerator / denominator
 
         query = query.order_by(score.desc())
         query = query.offset(request.offset).limit(request.limit)
