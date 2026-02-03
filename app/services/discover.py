@@ -1,7 +1,7 @@
 """Discover service with geo-spatial queries and location obfuscation."""
 
 import math
-import random
+
 from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
@@ -11,7 +11,6 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.config import settings
 from app.models.post import Post
 from app.models.user import User
 from app.schemas.post import LocationPoint, PostDiscoverRequest, PostDiscoverResponse, PostResponse
@@ -21,9 +20,10 @@ class DiscoverService:
     """Service for discover/feed operations with geo-spatial queries."""
 
     # Scoring weights
-    WEIGHT_LIKES = 0.3
+    WEIGHT_LIKES = 0.2
     WEIGHT_COMMENTS = 0.2
-    WEIGHT_RECENCY = 0.5
+    WEIGHT_RECENCY = 0.3
+    WEIGHT_DISTANCE = 0.3
 
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -38,12 +38,30 @@ class DiscoverService:
 
         Uses PostGIS ST_MakeEnvelope for efficient spatial queries.
         """
-        # Create bounding box envelope
+        # Validate and expand viewport
+        # Calculate width/height
+        lat_diff = request.max_latitude - request.min_latitude
+        lng_diff = request.max_longitude - request.min_longitude
+        
+        # Calculate center point
+        center_lat = (request.min_latitude + request.max_latitude) / 2
+        center_lng = (request.min_longitude + request.max_longitude) / 2
+        
+        # Expand by 15% buffer
+        lat_buffer = lat_diff * 0.15
+        lng_buffer = lng_diff * 0.15
+        
+        expanded_min_lat = max(-90, request.min_latitude - lat_buffer)
+        expanded_max_lat = min(90, request.max_latitude + lat_buffer)
+        expanded_min_lng = max(-180, request.min_longitude - lng_buffer)
+        expanded_max_lng = min(180, request.max_longitude + lng_buffer)
+
+        # Create bounding box envelope with expanded bounds
         envelope = ST_MakeEnvelope(
-            request.min_longitude,
-            request.min_latitude,
-            request.max_longitude,
-            request.max_latitude,
+            expanded_min_lng,
+            expanded_min_lat,
+            expanded_max_lng,
+            expanded_max_lat,
             4326,  # SRID
         )
 
@@ -63,17 +81,31 @@ class DiscoverService:
         total = total_result.scalar() or 0
 
         # Apply scoring and ordering
-        # Score = likes * 0.3 + comments * 0.2 + recency * 0.5
+        # Score = likes * 0.2 + comments * 0.2 + recency * 0.3 + distance * 0.3
         # Recency = 1 / (1 + hours_since_post)
+        # Distance Score = 1 / (1 + distance_from_center_normalized)
+        
         hours_since = func.extract(
             "epoch",
             func.now() - Post.created_at
         ) / 3600
+        
+        # Calculate distance from center (approximate using Euclidean distance on degrees)
+        # ST_Distance returns distance in degrees for geometry types with SRID 4326
+        # We normalize by the viewport diagonal size to make it scale-independent
+        center_point = ST_SetSRID(ST_MakePoint(center_lng, center_lat), 4326)
+        distance_degrees = func.ST_Distance(Post.location, center_point)
+        
+        # Normalize: viewport diagonal size
+        viewport_diag = math.sqrt(lat_diff**2 + lng_diff**2)
+        # Avoid division by zero
+        normalized_distance = distance_degrees / (viewport_diag if viewport_diag > 0 else 1.0)
 
         score = (
             Post.likes_count * self.WEIGHT_LIKES +
             Post.comments_count * self.WEIGHT_COMMENTS +
-            (1.0 / (1.0 + hours_since)) * self.WEIGHT_RECENCY
+            (1.0 / (1.0 + hours_since)) * self.WEIGHT_RECENCY +
+            (1.0 / (1.0 + normalized_distance * 10)) * self.WEIGHT_DISTANCE
         )
 
         query = query.order_by(score.desc())
@@ -160,11 +192,9 @@ class DiscoverService:
         current_user_id: Optional[UUID] = None,
     ) -> PostResponse:
         """
-        Convert Post model to PostResponse with location obfuscation.
-
-        Location is obfuscated if:
-        - Current user is not the author
-        - Current user is not following the author (TODO: implement following)
+        Convert Post model to PostResponse.
+        
+        Returns precise location as requested.
         """
         # Extract coordinates from PostGIS geometry
         coords_query = select(
@@ -174,24 +204,12 @@ class DiscoverService:
         coords_result = await self.db.execute(coords_query)
         coords = coords_result.one()
 
-        lat = coords.latitude
-        lng = coords.longitude
-
-        # Apply obfuscation if not author
-        should_obfuscate = (
-            current_user_id is None or
-            current_user_id != post.author_id
-        )
-
-        if should_obfuscate:
-            lat, lng = self._obfuscate_location(lat, lng)
-
         return PostResponse(
             id=post.id,
             author_id=post.author_id,
             content_text=post.content_text,
             media_urls=post.media_urls,
-            location=LocationPoint(latitude=lat, longitude=lng),
+            location=LocationPoint(latitude=coords.latitude, longitude=coords.longitude),
             address_name=post.address_name,
             created_at=post.created_at,
             likes_count=post.likes_count,
@@ -199,30 +217,3 @@ class DiscoverService:
             author=post.author,
         )
 
-    def _obfuscate_location(
-        self,
-        latitude: float,
-        longitude: float,
-    ) -> tuple[float, float]:
-        """
-        Apply random offset to location coordinates.
-
-        Adds ±LOCATION_FUZZY_METERS random offset.
-        """
-        fuzzy_meters = settings.location_fuzzy_meters
-
-        # Convert meters to approximate degrees
-        # 1 degree latitude ≈ 111,000 meters
-        # 1 degree longitude varies with latitude
-        lat_offset_degrees = fuzzy_meters / 111000
-        lng_offset_degrees = fuzzy_meters / (111000 * math.cos(math.radians(latitude)))
-
-        # Apply random offset
-        new_lat = latitude + random.uniform(-lat_offset_degrees, lat_offset_degrees)
-        new_lng = longitude + random.uniform(-lng_offset_degrees, lng_offset_degrees)
-
-        # Clamp to valid ranges
-        new_lat = max(-90, min(90, new_lat))
-        new_lng = max(-180, min(180, new_lng))
-
-        return new_lat, new_lng
