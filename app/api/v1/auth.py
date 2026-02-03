@@ -4,6 +4,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.exceptions import (
+    EmailTakenError,
+    InvalidCredentialsError,
+    InvalidTokenError,
+    UserDisabledError,
+    UsernameTakenError,
+)
 from app.schemas.user import (
     RefreshTokenRequest,
     TokenResponse,
@@ -30,10 +37,15 @@ async def register(
     try:
         user = await auth_service.register(user_data)
         return UserResponse.model_validate(user)
-    except ValueError as e:
+    except UsernameTakenError as e:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": e.code, "message": e.message},
+        )
+    except EmailTakenError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": e.code, "message": e.message},
         )
 
 
@@ -44,22 +56,22 @@ async def login(
 ) -> TokenResponse:
     """Login and get access token."""
     auth_service = AuthService(db)
-    user = await auth_service.authenticate(
-        credentials.username,
-        credentials.password,
-    )
-    if not user:
+    try:
+        user = await auth_service.authenticate(
+            credentials.username,
+            credentials.password,
+        )
+        return auth_service.create_tokens(user.id)
+    except InvalidCredentialsError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
+            detail={"code": e.code, "message": e.message},
         )
-    if not user.is_active:
+    except UserDisabledError as e:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="User is inactive",
+            detail={"code": e.code, "message": e.message},
         )
-
-    return auth_service.create_tokens(user.id)
 
 
 @router.post("/refresh", response_model=TokenResponse)
@@ -69,10 +81,16 @@ async def refresh_token(
 ) -> TokenResponse:
     """Refresh access token."""
     auth_service = AuthService(db)
-    tokens = await auth_service.refresh_tokens(request.refresh_token)
-    if not tokens:
+    try:
+        return await auth_service.refresh_tokens(request.refresh_token)
+    except InvalidTokenError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired refresh token",
+            detail={"code": e.code, "message": e.message},
         )
-    return tokens
+    except UserDisabledError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": e.code, "message": e.message},
+        )
+
