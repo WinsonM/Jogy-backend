@@ -19,6 +19,7 @@ class CommentCreate(CommentBase):
     """Schema for creating a comment."""
 
     parent_id: Optional[UUID] = None
+    reply_to_user_id: Optional[UUID] = None
 
 
 class CommentResponse(BaseModel):
@@ -28,11 +29,16 @@ class CommentResponse(BaseModel):
 
     id: UUID
     post_id: UUID
-    user_id: UUID
+    user_id: Optional[UUID]
     content: str
     parent_id: Optional[UUID] = None
+    root_id: Optional[UUID] = None
+    reply_to_user_id: Optional[UUID] = None
+    reply_to_username: Optional[str] = None
     created_at: datetime
     replies_count: int = 0
+    likes_count: int = 0
+    is_liked: bool = False
 
     # Populated from join
     user: Optional[UserResponse] = None
@@ -45,11 +51,16 @@ class CommentTreeResponse(BaseModel):
 
     id: UUID
     post_id: UUID
-    user_id: UUID
+    user_id: Optional[UUID]
     content: str
     parent_id: Optional[UUID] = None
+    root_id: Optional[UUID] = None
+    reply_to_user_id: Optional[UUID] = None
+    reply_to_username: Optional[str] = None
     created_at: datetime
     replies_count: int = 0
+    likes_count: int = 0
+    is_liked: bool = False
 
     # Populated from join
     user: Optional[UserResponse] = None

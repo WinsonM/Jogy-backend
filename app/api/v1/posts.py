@@ -4,10 +4,12 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_current_user_id, get_current_user_id_optional
 from app.core.database import get_db
+from app.models.post import Post
 from app.models.user import User
 from app.schemas.post import (
     PostCreate,
@@ -32,8 +34,11 @@ async def create_post(
         author_id=current_user.id,
         content_text=post_data.content_text,
         location=post_data.location,
+        title=post_data.title,
+        post_type=post_data.post_type,
         media_urls=post_data.media_urls,
         address_name=post_data.address_name,
+        expire_at=post_data.expire_at,
     )
     return await discover_service.get_post_by_id(post.id, current_user.id)
 
@@ -65,6 +70,32 @@ async def discover_posts(
     )
     discover_service = DiscoverService(db)
     return await discover_service.get_posts_in_viewport(request, current_user_id)
+
+
+@router.get("/search", response_model=list[PostResponse])
+async def search_posts(
+    q: str = Query(..., min_length=1, max_length=100),
+    limit: int = Query(20, ge=1, le=100),
+    current_user_id: Optional[UUID] = Depends(get_current_user_id_optional),
+    db: AsyncSession = Depends(get_db),
+) -> list[PostResponse]:
+    """Search posts by content, title, or address."""
+    like_query = f"%{q}%"
+    result = await db.execute(
+        select(Post)
+        .where(
+            or_(
+                Post.content_text.ilike(like_query),
+                Post.title.ilike(like_query),
+                Post.address_name.ilike(like_query),
+            )
+        )
+        .order_by(Post.created_at.desc())
+        .limit(limit)
+    )
+    posts = result.scalars().all()
+    discover_service = DiscoverService(db)
+    return [await discover_service._post_to_response(post, current_user_id) for post in posts]
 
 
 @router.get("/{post_id}", response_model=PostResponse)

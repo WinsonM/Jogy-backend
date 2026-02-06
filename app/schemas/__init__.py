@@ -5,6 +5,23 @@ from app.schemas.comment import (
     CommentResponse,
     CommentTreeResponse,
 )
+from app.schemas.chat import (
+    ConversationDirectCreateRequest,
+    ConversationListResponse,
+    ConversationPinRequest,
+    ConversationReadRequest,
+    ConversationSummary,
+    MessageCreateRequest,
+    MessageListResponse,
+    MessageResponse,
+)
+from app.schemas.favorite import FavoriteToggleResponse
+from app.schemas.follow import FollowActionResponse, FollowListResponse
+from app.schemas.history import (
+    HistoryCreateRequest,
+    HistoryItemResponse,
+    HistoryListResponse,
+)
 from app.schemas.like import LikeResponse, LikeToggleResponse
 from app.schemas.location import LocationSyncRequest, LocationSyncResponse
 from app.schemas.post import (
@@ -13,6 +30,8 @@ from app.schemas.post import (
     PostDiscoverResponse,
     PostResponse,
 )
+from app.schemas.qr import MyQRCodeResponse, QRResolveRequest, QRResolveResponse
+from app.schemas.search import GlobalSearchResponse
 from app.schemas.user import (
     TokenResponse,
     UserCreate,
@@ -37,10 +56,33 @@ __all__ = [
     "CommentCreate",
     "CommentResponse",
     "CommentTreeResponse",
+    # Chat
+    "ConversationDirectCreateRequest",
+    "ConversationPinRequest",
+    "ConversationReadRequest",
+    "ConversationSummary",
+    "ConversationListResponse",
+    "MessageCreateRequest",
+    "MessageResponse",
+    "MessageListResponse",
     # Like
     "LikeResponse",
     "LikeToggleResponse",
+    "FavoriteToggleResponse",
+    # Follow
+    "FollowActionResponse",
+    "FollowListResponse",
+    # History
+    "HistoryCreateRequest",
+    "HistoryItemResponse",
+    "HistoryListResponse",
     # Location
     "LocationSyncRequest",
     "LocationSyncResponse",
+    # Search
+    "GlobalSearchResponse",
+    # QR
+    "MyQRCodeResponse",
+    "QRResolveRequest",
+    "QRResolveResponse",
 ]

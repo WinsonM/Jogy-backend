@@ -16,3 +16,28 @@ class LocationSyncResponse(BaseModel):
 
     success: bool
     message: str = "Location synced"
+
+
+class ReverseGeocodeResponse(BaseModel):
+    """Schema for reverse geocode response."""
+
+    place_name: str
+    address: str
+    latitude: float
+    longitude: float
+
+
+class NearbyPoiItem(BaseModel):
+    """Schema for nearby POI item."""
+
+    place_name: str
+    address: str
+    latitude: float
+    longitude: float
+    distance_meters: float
+
+
+class NearbyPoiResponse(BaseModel):
+    """Schema for nearby POI list response."""
+
+    items: list[NearbyPoiItem]

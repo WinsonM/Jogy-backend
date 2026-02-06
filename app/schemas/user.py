@@ -1,6 +1,6 @@
 """User schemas for request/response validation."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 from uuid import UUID
 
@@ -44,6 +44,9 @@ class UserUpdate(BaseModel):
 
     username: Optional[str] = Field(None, min_length=3, max_length=50)
     avatar_url: Optional[str] = Field(None, max_length=500)
+    bio: Optional[str] = Field(None, max_length=1000)
+    gender: Optional[str] = Field(None, max_length=20)
+    birthday: Optional[date] = None
     email: Optional[EmailStr] = None
 
 
@@ -55,6 +58,9 @@ class UserResponse(BaseModel):
     id: UUID
     username: str
     avatar_url: Optional[str] = None
+    bio: Optional[str] = None
+    gender: str = "保密"
+    birthday: Optional[date] = None
     created_at: datetime
 
 

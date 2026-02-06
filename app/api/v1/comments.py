@@ -37,7 +37,26 @@ async def create_comment(
             user_id=current_user_id,
             data=comment_data,
         )
-        return CommentResponse.model_validate(comment)
+        comment = await comment_service.get_comment_by_id(comment.id)
+        if comment is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Comment not found",
+            )
+        return CommentResponse(
+            id=comment.id,
+            post_id=comment.post_id,
+            user_id=comment.user_id,
+            content=comment.content,
+            parent_id=comment.parent_id,
+            root_id=comment.root_id,
+            reply_to_user_id=comment.reply_to_user_id,
+            reply_to_username=comment.reply_to_user.username if comment.reply_to_user else None,
+            created_at=comment.created_at,
+            replies_count=comment.replies_count,
+            likes_count=comment.likes_count,
+            user=comment.user,
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -57,7 +76,7 @@ async def get_comments(
     Get comments for a post.
 
     If parent_id is None, returns root-level comments with top 2 replies each.
-    If parent_id is provided, returns replies to that comment.
+    If parent_id is provided, returns all replies in that root thread.
     """
     comment_service = CommentService(db)
     return await comment_service.get_comments(

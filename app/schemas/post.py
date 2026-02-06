@@ -19,7 +19,9 @@ class LocationPoint(BaseModel):
 class PostBase(BaseModel):
     """Base post schema."""
 
+    title: Optional[str] = Field(None, max_length=100)
     content_text: str = Field(..., min_length=1, max_length=5000)
+    post_type: str = Field(default="bubble", max_length=20)
     address_name: Optional[str] = Field(None, max_length=500)
 
 
@@ -28,6 +30,7 @@ class PostCreate(PostBase):
 
     media_urls: Optional[list[str]] = Field(default_factory=list, max_length=10)
     location: LocationPoint
+    expire_at: Optional[datetime] = None
 
 
 class PostResponse(BaseModel):
@@ -36,14 +39,20 @@ class PostResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    author_id: UUID
+    author_id: Optional[UUID]
+    title: Optional[str] = None
     content_text: str
+    post_type: str = "bubble"
     media_urls: Optional[list[str]] = None
     location: LocationPoint
     address_name: Optional[str] = None
+    expire_at: Optional[datetime] = None
     created_at: datetime
     likes_count: int = 0
     comments_count: int = 0
+    favorites_count: int = 0
+    is_liked: bool = False
+    is_favorited: bool = False
 
     # Populated from join
     author: Optional[UserResponse] = None

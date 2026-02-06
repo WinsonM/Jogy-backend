@@ -5,15 +5,17 @@ from typing import TYPE_CHECKING, Any, Optional
 from uuid import UUID
 
 from geoalchemy2 import Geometry
-from sqlalchemy import ForeignKey, Index, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
+    from app.models.browsing_history import UserBrowsingHistory
     from app.models.comment import Comment
     from app.models.like import Like
+    from app.models.post_favorite import PostFavorite
     from app.models.user import User
 
 
@@ -22,10 +24,20 @@ class Post(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "posts"
 
-    author_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
+    author_id: Mapped[Optional[UUID]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
         index=True,
+    )
+    title: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+    post_type: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="bubble",
+        server_default="bubble",
     )
     content_text: Mapped[str] = mapped_column(
         Text,
@@ -45,6 +57,10 @@ class Post(Base, UUIDMixin, TimestampMixin):
         String(500),
         nullable=True,
     )
+    expire_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
     # Denormalized counts for performance
     likes_count: Mapped[int] = mapped_column(
@@ -55,9 +71,13 @@ class Post(Base, UUIDMixin, TimestampMixin):
         default=0,
         nullable=False,
     )
+    favorites_count: Mapped[int] = mapped_column(
+        default=0,
+        nullable=False,
+    )
 
     # Relationships
-    author: Mapped["User"] = relationship(
+    author: Mapped[Optional["User"]] = relationship(
         "User",
         back_populates="posts",
     )
@@ -69,6 +89,18 @@ class Post(Base, UUIDMixin, TimestampMixin):
     )
     likes: Mapped[list["Like"]] = relationship(
         "Like",
+        back_populates="post",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+    )
+    favorites: Mapped[list["PostFavorite"]] = relationship(
+        "PostFavorite",
+        back_populates="post",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+    )
+    browsing_history: Mapped[list["UserBrowsingHistory"]] = relationship(
+        "UserBrowsingHistory",
         back_populates="post",
         lazy="selectin",
         cascade="all, delete-orphan",

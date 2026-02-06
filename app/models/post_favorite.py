@@ -1,4 +1,4 @@
-"""Like model."""
+"""Post favorite model."""
 
 from typing import TYPE_CHECKING
 from uuid import UUID
@@ -13,10 +13,10 @@ if TYPE_CHECKING:
     from app.models.user import User
 
 
-class Like(Base, UUIDMixin, TimestampMixin):
-    """Like model for post likes."""
+class PostFavorite(Base, UUIDMixin, TimestampMixin):
+    """User favorite relation for posts."""
 
-    __tablename__ = "likes"
+    __tablename__ = "post_favorites"
 
     user_id: Mapped[UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"),
@@ -29,19 +29,15 @@ class Like(Base, UUIDMixin, TimestampMixin):
         index=True,
     )
 
-    # Relationships
     user: Mapped["User"] = relationship(
         "User",
-        back_populates="likes",
+        back_populates="post_favorites",
     )
     post: Mapped["Post"] = relationship(
         "Post",
-        back_populates="likes",
+        back_populates="favorites",
     )
 
     __table_args__ = (
-        UniqueConstraint("user_id", "post_id", name="uq_likes_user_post"),
+        UniqueConstraint("user_id", "post_id", name="uq_post_favorites_user_post"),
     )
-
-    def __repr__(self) -> str:
-        return f"<Like(id={self.id}, user_id={self.user_id}, post_id={self.post_id})>"

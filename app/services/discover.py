@@ -1,18 +1,18 @@
 """Discover service with geo-spatial queries and location obfuscation."""
 
-import math
-
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from geoalchemy2.functions import ST_MakeEnvelope, ST_MakePoint, ST_SetSRID, ST_X, ST_Y
+from geoalchemy2.functions import ST_MakeEnvelope, ST_MakePoint, ST_SetSRID
+from geoalchemy2.shape import to_shape
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.models.like import Like
 from app.models.post import Post
-from app.models.user import User
+from app.models.post_favorite import PostFavorite
 from app.schemas.post import LocationPoint, PostDiscoverRequest, PostDiscoverResponse, PostResponse
 
 
@@ -69,6 +69,7 @@ class DiscoverService:
         query = (
             select(Post)
             .where(Post.location.ST_Within(envelope))
+            .where((Post.expire_at.is_(None)) | (Post.expire_at > func.now()))
             .options(selectinload(Post.author))
         )
 
@@ -76,6 +77,7 @@ class DiscoverService:
         count_query = (
             select(func.count(Post.id))
             .where(Post.location.ST_Within(envelope))
+            .where((Post.expire_at.is_(None)) | (Post.expire_at > func.now()))
         )
         total_result = await self.db.execute(count_query)
         total = total_result.scalar() or 0
@@ -130,8 +132,11 @@ class DiscoverService:
         author_id: UUID,
         content_text: str,
         location: LocationPoint,
+        title: Optional[str] = None,
+        post_type: str = "bubble",
         media_urls: Optional[list[str]] = None,
         address_name: Optional[str] = None,
+        expire_at: Optional[datetime] = None,
     ) -> Post:
         """Create a new post with geo location."""
         # Create PostGIS point
@@ -142,10 +147,13 @@ class DiscoverService:
 
         post = Post(
             author_id=author_id,
+            title=title,
+            post_type=post_type,
             content_text=content_text,
             media_urls=media_urls or [],
             location=point,
             address_name=address_name,
+            expire_at=expire_at,
         )
         self.db.add(post)
         await self.db.flush()
@@ -161,6 +169,7 @@ class DiscoverService:
         result = await self.db.execute(
             select(Post)
             .where(Post.id == post_id)
+            .where((Post.expire_at.is_(None)) | (Post.expire_at > func.now()))
             .options(selectinload(Post.author))
         )
         post = result.scalar_one_or_none()
@@ -194,23 +203,42 @@ class DiscoverService:
         Returns precise location as requested.
         """
         # Extract coordinates from PostGIS geometry
-        coords_query = select(
-            ST_X(post.location).label("longitude"),
-            ST_Y(post.location).label("latitude"),
-        )
-        coords_result = await self.db.execute(coords_query)
-        coords = coords_result.one()
+        point = to_shape(post.location)
+        is_liked = False
+        is_favorited = False
+
+        if current_user_id:
+            liked_result = await self.db.execute(
+                select(Like.id).where(
+                    Like.post_id == post.id,
+                    Like.user_id == current_user_id,
+                )
+            )
+            is_liked = liked_result.scalar_one_or_none() is not None
+
+            favorite_result = await self.db.execute(
+                select(PostFavorite.id).where(
+                    PostFavorite.post_id == post.id,
+                    PostFavorite.user_id == current_user_id,
+                )
+            )
+            is_favorited = favorite_result.scalar_one_or_none() is not None
 
         return PostResponse(
             id=post.id,
             author_id=post.author_id,
+            title=post.title,
             content_text=post.content_text,
+            post_type=post.post_type,
             media_urls=post.media_urls,
-            location=LocationPoint(latitude=coords.latitude, longitude=coords.longitude),
+            location=LocationPoint(latitude=point.y, longitude=point.x),
             address_name=post.address_name,
+            expire_at=post.expire_at,
             created_at=post.created_at,
             likes_count=post.likes_count,
             comments_count=post.comments_count,
+            favorites_count=post.favorites_count,
+            is_liked=is_liked,
+            is_favorited=is_favorited,
             author=post.author,
         )
-

@@ -1,8 +1,11 @@
 """Authentication routes."""
 
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import get_current_user_id
 from app.core.database import get_db
 from app.core.exceptions import (
     EmailTakenError,
@@ -11,6 +14,7 @@ from app.core.exceptions import (
     UserDisabledError,
     UsernameTakenError,
 )
+from app.schemas.auth import AuthActionResponse, SendCodeRequest, VerifyCodeRequest
 from app.schemas.user import (
     RefreshTokenRequest,
     TokenResponse,
@@ -94,3 +98,33 @@ async def refresh_token(
             detail={"code": e.code, "message": e.message},
         )
 
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(
+    _: UUID = Depends(get_current_user_id),
+) -> None:
+    """Logout current user.
+
+    JWT is stateless here, so this endpoint is currently a client-side token drop hook.
+    """
+    return None
+
+
+@router.post("/send-code", response_model=AuthActionResponse)
+async def send_verification_code(
+    request: SendCodeRequest,
+) -> AuthActionResponse:
+    """Send verification code (placeholder implementation)."""
+    # TODO: integrate email/SMS provider and persistent code storage.
+    return AuthActionResponse(success=True, message=f"Code sent to {request.email}")
+
+
+@router.post("/verify-code", response_model=AuthActionResponse)
+async def verify_code(
+    request: VerifyCodeRequest,
+) -> AuthActionResponse:
+    """Verify a one-time code (placeholder implementation)."""
+    # TODO: verify against persistent code storage.
+    if request.code != "123456":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid code")
+    return AuthActionResponse(success=True, message="Code verified")
