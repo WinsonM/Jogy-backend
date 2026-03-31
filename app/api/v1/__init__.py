@@ -15,7 +15,9 @@ from app.api.v1 import (
     posts,
     qr,
     search,
+    uploads,
     users,
+    ws,
 )
 
 api_router = APIRouter()
@@ -33,3 +35,5 @@ api_router.include_router(location.router, prefix="/location", tags=["location"]
 api_router.include_router(conversations.router, prefix="/conversations", tags=["conversations"])
 api_router.include_router(search.router, prefix="/search", tags=["search"])
 api_router.include_router(qr.router, prefix="/qr", tags=["qr"])
+api_router.include_router(uploads.router, prefix="/uploads", tags=["uploads"])
+api_router.include_router(ws.router, tags=["websocket"])

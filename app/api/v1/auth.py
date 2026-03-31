@@ -23,6 +23,8 @@ from app.schemas.user import (
     UserResponse,
 )
 from app.services.auth import AuthService
+from app.services.email import send_verification_code as send_email_code
+from app.services.email import verify_code as verify_email_code
 
 router = APIRouter()
 
@@ -114,17 +116,26 @@ async def logout(
 async def send_verification_code(
     request: SendCodeRequest,
 ) -> AuthActionResponse:
-    """Send verification code (placeholder implementation)."""
-    # TODO: integrate email/SMS provider and persistent code storage.
-    return AuthActionResponse(success=True, message=f"Code sent to {request.email}")
+    """Send verification code to email via SMTP."""
+    try:
+        await send_email_code(request.email)
+        return AuthActionResponse(success=True, message=f"Code sent to {request.email}")
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to send code: {str(e)}",
+        )
 
 
 @router.post("/verify-code", response_model=AuthActionResponse)
 async def verify_code(
     request: VerifyCodeRequest,
 ) -> AuthActionResponse:
-    """Verify a one-time code (placeholder implementation)."""
-    # TODO: verify against persistent code storage.
-    if request.code != "123456":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid code")
+    """Verify a one-time code stored in Redis."""
+    is_valid = await verify_email_code(request.email, request.code)
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired code",
+        )
     return AuthActionResponse(success=True, message="Code verified")

@@ -39,6 +39,13 @@ class Settings(BaseSettings):
     rate_limit_discover: int = 10
     rate_limit_location_sync: int = 5
 
+    # SMTP (for email verification codes)
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from_name: str = "Jogy"
+
     # Location
     location_fuzzy_meters: int = 100
 

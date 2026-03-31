@@ -31,6 +31,9 @@ dependencies = [
     # Task Queue (Optional)
     "celery>=5.3.6",
     
+    # Email
+    "aiosmtplib>=3.0.0",
+
     # Utilities
     "httpx>=0.26.0",
     "shapely>=2.0.2",

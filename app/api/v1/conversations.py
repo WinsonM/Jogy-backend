@@ -25,6 +25,7 @@ from app.schemas.chat import (
     MessageResponse,
 )
 from app.schemas.user import UserResponse
+from app.services.ws_manager import ws_manager
 
 router = APIRouter()
 
@@ -358,7 +359,23 @@ async def send_message(
         .values(last_message_id=message.id, last_message_at=message.created_at)
     )
     await db.flush()
-    return await _message_to_response(message, db)
+
+    response = await _message_to_response(message, db)
+
+    # Push to other members via WebSocket
+    members_result = await db.execute(
+        select(ConversationMember.user_id).where(
+            ConversationMember.conversation_id == conversation_id,
+            ConversationMember.user_id != current_user_id,
+        )
+    )
+    recipient_ids = [row[0] for row in members_result.all()]
+    await ws_manager.broadcast_to_users(
+        recipient_ids,
+        {"type": "new_message", "data": response.model_dump(mode="json")},
+    )
+
+    return response
 
 
 @router.post("/{conversation_id}/read", status_code=status.HTTP_204_NO_CONTENT)
