@@ -97,8 +97,7 @@ async def get_user_posts(
         select(Post).where(Post.author_id == user_id).order_by(Post.created_at.desc())
     )
     posts = result.scalars().all()
-    discover_service = DiscoverService(db)
-    return [await discover_service._post_to_response(post, current_user_id) for post in posts]
+    return await _batch_posts_to_response(db, posts, current_user_id)
 
 
 @router.get("/{user_id}/liked-posts", response_model=list[PostResponse])
@@ -115,8 +114,7 @@ async def get_user_liked_posts(
         .order_by(Like.created_at.desc())
     )
     posts = result.scalars().all()
-    discover_service = DiscoverService(db)
-    return [await discover_service._post_to_response(post, current_user_id) for post in posts]
+    return await _batch_posts_to_response(db, posts, current_user_id)
 
 
 @router.get("/{user_id}/favorited-posts", response_model=list[PostResponse])
@@ -133,5 +131,43 @@ async def get_user_favorited_posts(
         .order_by(PostFavorite.created_at.desc())
     )
     posts = result.scalars().all()
+    return await _batch_posts_to_response(db, posts, current_user_id)
+
+
+async def _batch_posts_to_response(
+    db: AsyncSession,
+    posts: list[Post],
+    current_user_id: Optional[UUID],
+) -> list[PostResponse]:
+    """Convert posts to responses with batch isLiked/isFavorited queries (2 queries total)."""
+    if not posts:
+        return []
+
+    post_ids = [p.id for p in posts]
+    liked_ids: set[UUID] = set()
+    favorited_ids: set[UUID] = set()
+
+    if current_user_id:
+        liked_result = await db.execute(
+            select(Like.post_id).where(
+                Like.user_id == current_user_id,
+                Like.post_id.in_(post_ids),
+            )
+        )
+        liked_ids = set(liked_result.scalars().all())
+
+        favorited_result = await db.execute(
+            select(PostFavorite.post_id).where(
+                PostFavorite.user_id == current_user_id,
+                PostFavorite.post_id.in_(post_ids),
+            )
+        )
+        favorited_ids = set(favorited_result.scalars().all())
+
     discover_service = DiscoverService(db)
-    return [await discover_service._post_to_response(post, current_user_id) for post in posts]
+    return [
+        discover_service._post_to_response_fast(
+            post, post.id in liked_ids, post.id in favorited_ids
+        )
+        for post in posts
+    ]

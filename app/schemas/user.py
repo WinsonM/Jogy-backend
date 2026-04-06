@@ -6,6 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
+from app.schemas.base import CamelORMModel
+
 
 class UserBase(BaseModel):
     """Base user schema."""
@@ -50,18 +52,22 @@ class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
 
 
-class UserResponse(BaseModel):
-    """Schema for user response (no sensitive fields)."""
+class UserResponse(CamelORMModel):
+    """Schema for user response (no sensitive fields).
 
-    model_config = ConfigDict(from_attributes=True)
+    Serializes to camelCase for frontend compatibility:
+    avatar_url -> avatarUrl, created_at -> createdAt, etc.
+    """
 
     id: UUID
     username: str
-    avatar_url: Optional[str] = None
-    bio: Optional[str] = None
+    avatar_url: Optional[str] = ""
+    bio: Optional[str] = ""
     gender: str = "保密"
     birthday: Optional[date] = None
-    created_at: datetime
+    created_at: Optional[datetime] = None
+    followers: int = 0
+    following: int = 0
 
 
 class UserInDB(UserResponse):

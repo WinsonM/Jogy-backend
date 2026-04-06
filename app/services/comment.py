@@ -137,11 +137,8 @@ class CommentService:
 
         # Build response.
         if parent_id is None:
-            # Root comments with top replies preview.
-            tree_comments = []
-            for comment in comments:
-                tree_comment = await self._build_comment_tree(comment)
-                tree_comments.append(tree_comment)
+            # Root comments with top replies preview (batch loaded).
+            tree_comments = await self._build_comment_trees_batch(comments)
         else:
             # Flat thread replies view.
             tree_comments = [
@@ -169,6 +166,83 @@ class CommentService:
             total=total,
             has_more=offset + len(comments) < total,
         )
+
+    async def _build_comment_trees_batch(
+        self,
+        root_comments: list[Comment],
+    ) -> list[CommentTreeResponse]:
+        """Build comment trees for multiple root comments in ONE query instead of N.
+
+        Old: 20 root comments = 20 × SELECT replies = 20 queries
+        New: 20 root comments = 1 × SELECT replies WHERE root_id IN (...) = 1 query
+        """
+        if not root_comments:
+            return []
+
+        root_ids = [c.id for c in root_comments]
+
+        # Single query: get all replies for all root comments at once
+        all_replies_result = await self.db.execute(
+            select(Comment)
+            .where(Comment.root_id.in_(root_ids), Comment.id.notin_(root_ids))
+            .options(selectinload(Comment.user), selectinload(Comment.reply_to_user))
+            .order_by(Comment.created_at.asc())
+        )
+        all_replies = all_replies_result.scalars().all()
+
+        # Group replies by root_id
+        replies_by_root: dict[UUID, list[Comment]] = {rid: [] for rid in root_ids}
+        for reply in all_replies:
+            if reply.root_id in replies_by_root:
+                replies_by_root[reply.root_id].append(reply)
+
+        # Build tree for each root
+        tree_comments = []
+        for comment in root_comments:
+            thread_replies = replies_by_root.get(comment.id, [])
+            top_replies = thread_replies[: self.TOP_REPLIES_LIMIT]
+            total_replies = len(thread_replies)
+
+            reply_responses = [
+                CommentTreeResponse(
+                    id=reply.id,
+                    post_id=reply.post_id,
+                    user_id=reply.user_id,
+                    content=reply.content,
+                    parent_id=reply.parent_id,
+                    root_id=reply.root_id,
+                    reply_to_user_id=reply.reply_to_user_id,
+                    reply_to_username=reply.reply_to_user.username if reply.reply_to_user else None,
+                    created_at=reply.created_at,
+                    replies_count=reply.replies_count,
+                    likes_count=reply.likes_count,
+                    user=reply.user,
+                    replies=[],
+                    has_more_replies=reply.replies_count > 0,
+                )
+                for reply in top_replies
+            ]
+
+            tree_comments.append(
+                CommentTreeResponse(
+                    id=comment.id,
+                    post_id=comment.post_id,
+                    user_id=comment.user_id,
+                    content=comment.content,
+                    parent_id=comment.parent_id,
+                    root_id=comment.root_id,
+                    reply_to_user_id=comment.reply_to_user_id,
+                    reply_to_username=comment.reply_to_user.username if comment.reply_to_user else None,
+                    created_at=comment.created_at,
+                    replies_count=comment.replies_count,
+                    likes_count=comment.likes_count,
+                    user=comment.user,
+                    replies=reply_responses,
+                    has_more_replies=total_replies > len(top_replies),
+                )
+            )
+
+        return tree_comments
 
     async def _build_comment_tree(
         self,

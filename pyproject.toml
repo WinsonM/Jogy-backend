@@ -34,6 +34,9 @@ dependencies = [
     # Email
     "aiosmtplib>=3.0.0",
 
+    # Image Processing
+    "Pillow>=10.2.0",
+
     # Utilities
     "httpx>=0.26.0",
     "shapely>=2.0.2",

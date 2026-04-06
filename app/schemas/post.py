@@ -6,14 +6,20 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.base import CamelModel, CamelORMModel
 from app.schemas.user import UserResponse
 
 
-class LocationPoint(BaseModel):
-    """Schema for location coordinates."""
+class LocationPoint(CamelModel):
+    """Schema for location coordinates.
+
+    Serializes to camelCase: place_name -> placeName.
+    """
 
     latitude: float = Field(..., ge=-90, le=90)
     longitude: float = Field(..., ge=-180, le=180)
+    place_name: Optional[str] = None
+    address: Optional[str] = None
 
 
 class PostBase(BaseModel):
@@ -33,29 +39,39 @@ class PostCreate(PostBase):
     expire_at: Optional[datetime] = None
 
 
-class PostResponse(BaseModel):
-    """Schema for post response."""
+class PostResponse(CamelORMModel):
+    """Schema for post response.
 
-    model_config = ConfigDict(from_attributes=True)
+    Serializes to camelCase with custom aliases for frontend compatibility:
+    - content_text -> "content"
+    - media_urls -> "imageUrls"
+    - likes_count -> "likes"
+    - favorites_count -> "favorites"
+    - author -> "user"
+    Standard camelCase (auto): is_liked -> isLiked, created_at -> createdAt, etc.
+    """
 
     id: UUID
-    author_id: Optional[UUID]
+    author_id: Optional[UUID] = None
     title: Optional[str] = None
-    content_text: str
+    content_text: str = Field(serialization_alias="content")
     post_type: str = "bubble"
-    media_urls: Optional[list[str]] = None
+    media_urls: Optional[list[str]] = Field(default=None, serialization_alias="imageUrls")
     location: LocationPoint
     address_name: Optional[str] = None
     expire_at: Optional[datetime] = None
     created_at: datetime
-    likes_count: int = 0
+    likes_count: int = Field(default=0, serialization_alias="likes")
     comments_count: int = 0
-    favorites_count: int = 0
+    favorites_count: int = Field(default=0, serialization_alias="favorites")
     is_liked: bool = False
     is_favorited: bool = False
 
-    # Populated from join
-    author: Optional[UserResponse] = None
+    # Populated from join - serializes as "user" for frontend
+    author: Optional[UserResponse] = Field(default=None, serialization_alias="user")
+
+    # Frontend expects a comments array (empty by default, loaded separately)
+    comments: list = Field(default_factory=list)
 
 
 class PostDiscoverRequest(BaseModel):
@@ -69,8 +85,11 @@ class PostDiscoverRequest(BaseModel):
     offset: int = Field(default=0, ge=0)
 
 
-class PostDiscoverResponse(BaseModel):
-    """Schema for discover response."""
+class PostDiscoverResponse(CamelModel):
+    """Schema for discover response.
+
+    Serializes to camelCase: has_more -> hasMore.
+    """
 
     posts: list[PostResponse]
     total: int

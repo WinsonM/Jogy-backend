@@ -113,13 +113,33 @@ class DiscoverService:
         result = await self.db.execute(query)
         posts = result.scalars().all()
 
-        # Convert to response with location obfuscation
-        post_responses = []
-        for post in posts:
-            post_response = await self._post_to_response(
-                post, current_user_id
+        # Batch query isLiked/isFavorited for all posts at once (2 queries instead of 2N)
+        post_ids = [post.id for post in posts]
+        liked_ids: set[UUID] = set()
+        favorited_ids: set[UUID] = set()
+
+        if current_user_id and post_ids:
+            liked_result = await self.db.execute(
+                select(Like.post_id).where(
+                    Like.user_id == current_user_id,
+                    Like.post_id.in_(post_ids),
+                )
             )
-            post_responses.append(post_response)
+            liked_ids = set(liked_result.scalars().all())
+
+            favorited_result = await self.db.execute(
+                select(PostFavorite.post_id).where(
+                    PostFavorite.user_id == current_user_id,
+                    PostFavorite.post_id.in_(post_ids),
+                )
+            )
+            favorited_ids = set(favorited_result.scalars().all())
+
+        # Convert to response using batch results
+        post_responses = [
+            self._post_to_response_fast(post, post.id in liked_ids, post.id in favorited_ids)
+            for post in posts
+        ]
 
         return PostDiscoverResponse(
             posts=post_responses,
@@ -192,18 +212,52 @@ class DiscoverService:
         await self.db.delete(post)
         return True
 
+    def _post_to_response_fast(
+        self,
+        post: Post,
+        is_liked: bool = False,
+        is_favorited: bool = False,
+    ) -> PostResponse:
+        """Convert Post to PostResponse using pre-computed engagement flags.
+
+        Used by batch endpoints (discover, user posts) where isLiked/isFavorited
+        are resolved in bulk via IN queries instead of per-post SELECTs.
+        """
+        point = to_shape(post.location)
+        return PostResponse(
+            id=post.id,
+            author_id=post.author_id,
+            title=post.title,
+            content_text=post.content_text,
+            post_type=post.post_type,
+            media_urls=post.media_urls,
+            location=LocationPoint(
+                latitude=point.y,
+                longitude=point.x,
+                place_name=post.address_name,
+                address=post.address_name,
+            ),
+            address_name=post.address_name,
+            expire_at=post.expire_at,
+            created_at=post.created_at,
+            likes_count=post.likes_count,
+            comments_count=post.comments_count,
+            favorites_count=post.favorites_count,
+            is_liked=is_liked,
+            is_favorited=is_favorited,
+            author=post.author,
+        )
+
     async def _post_to_response(
         self,
         post: Post,
         current_user_id: Optional[UUID] = None,
     ) -> PostResponse:
+        """Convert Post to PostResponse with per-post engagement query.
+
+        Used for single-post endpoints (get by ID, create).
+        For batch endpoints, use _post_to_response_fast() instead.
         """
-        Convert Post model to PostResponse.
-        
-        Returns precise location as requested.
-        """
-        # Extract coordinates from PostGIS geometry
-        point = to_shape(post.location)
         is_liked = False
         is_favorited = False
 
@@ -224,21 +278,4 @@ class DiscoverService:
             )
             is_favorited = favorite_result.scalar_one_or_none() is not None
 
-        return PostResponse(
-            id=post.id,
-            author_id=post.author_id,
-            title=post.title,
-            content_text=post.content_text,
-            post_type=post.post_type,
-            media_urls=post.media_urls,
-            location=LocationPoint(latitude=point.y, longitude=point.x),
-            address_name=post.address_name,
-            expire_at=post.expire_at,
-            created_at=post.created_at,
-            likes_count=post.likes_count,
-            comments_count=post.comments_count,
-            favorites_count=post.favorites_count,
-            is_liked=is_liked,
-            is_favorited=is_favorited,
-            author=post.author,
-        )
+        return self._post_to_response_fast(post, is_liked, is_favorited)

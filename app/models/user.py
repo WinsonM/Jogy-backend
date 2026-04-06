@@ -125,5 +125,15 @@ class User(Base, UUIDMixin, TimestampMixin):
         cascade="all, delete-orphan",
     )
 
+    @property
+    def followers(self) -> int:
+        """Count of users following this user."""
+        return len(self.follower_relations) if self.follower_relations else 0
+
+    @property
+    def following(self) -> int:
+        """Count of users this user is following."""
+        return len(self.following_relations) if self.following_relations else 0
+
     def __repr__(self) -> str:
         return f"<User(id={self.id}, username={self.username})>"
