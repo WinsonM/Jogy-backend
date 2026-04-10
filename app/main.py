@@ -53,6 +53,7 @@ app.include_router(api_router, prefix="/api/v1")
 # Serve uploaded files as static files
 import os
 os.makedirs("uploads/images", exist_ok=True)
+os.makedirs("uploads/thumbnails", exist_ok=True)
 os.makedirs("uploads/files", exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 

@@ -30,7 +30,7 @@ COPY alembic.ini .
 COPY app/ app/
 
 # Create uploads directory
-RUN mkdir -p uploads/images uploads/files
+RUN mkdir -p uploads/images uploads/thumbnails uploads/files
 
 # Create non-root user
 RUN useradd -m -r appuser && chown -R appuser:appuser /app
