@@ -21,13 +21,21 @@ class SignatureMiddleware(BaseHTTPMiddleware):
     - X-Timestamp: Unix timestamp of request
     """
 
-    # Paths that don't require signature verification
+    # Paths that don't require signature verification.
+    # Auth endpoints are exempt because they run before the user has any
+    # credentials to sign with (login / register / verification codes).
     EXEMPT_PATHS = {
         "/",
         "/docs",
         "/redoc",
         "/openapi.json",
         "/health",
+        "/api/v1/auth/login",
+        "/api/v1/auth/logout",
+        "/api/v1/auth/register",
+        "/api/v1/auth/send-code",
+        "/api/v1/auth/verify-code",
+        "/api/v1/auth/refresh",
     }
 
     def __init__(self, app: ASGIApp, enabled: bool = True):
