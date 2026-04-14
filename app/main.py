@@ -42,9 +42,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Custom middleware (disabled in debug mode for easier testing)
-if not settings.debug:
+# Custom middleware — each has its own toggle in settings
+# SignatureMiddleware is off by default until the Flutter app implements signing
+if settings.signature_middleware_enabled:
     app.add_middleware(SignatureMiddleware, enabled=True)
+if settings.rate_limit_middleware_enabled and not settings.debug:
     app.add_middleware(RateLimitMiddleware, enabled=True)
 
 # Include API routes

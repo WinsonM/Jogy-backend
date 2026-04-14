@@ -34,6 +34,8 @@ class Settings(BaseSettings):
 
     # API Security
     api_signature_secret: str = "your-api-signature-secret-change-in-production"
+    signature_middleware_enabled: bool = False  # Enable when Flutter app supports signing
+    rate_limit_middleware_enabled: bool = True
 
     # Rate Limiting (requests per second)
     rate_limit_discover: int = 10

@@ -66,16 +66,39 @@ class AuthService:
         return user
 
     async def authenticate(self, username: str, password: str) -> User:
-        """Authenticate user by username and password.
-        
+        """Authenticate user by username or email, and password.
+
+        The ``username`` parameter accepts either a username or an email
+        address. If it contains '@', the email column is tried first;
+        otherwise the username column is tried first. A fallback query
+        on the other column is attempted when the first yields no match.
+
         Raises:
-            InvalidCredentialsError: If username or password is invalid.
+            InvalidCredentialsError: If credentials are invalid.
             UserDisabledError: If user account is disabled.
         """
-        result = await self.db.execute(
-            select(User).where(User.username == username)
-        )
+        # Determine primary lookup column
+        if "@" in username:
+            result = await self.db.execute(
+                select(User).where(User.email == username)
+            )
+        else:
+            result = await self.db.execute(
+                select(User).where(User.username == username)
+            )
         user = result.scalar_one_or_none()
+
+        # Fallback: try the other column
+        if user is None:
+            if "@" in username:
+                result = await self.db.execute(
+                    select(User).where(User.username == username)
+                )
+            else:
+                result = await self.db.execute(
+                    select(User).where(User.email == username)
+                )
+            user = result.scalar_one_or_none()
 
         if not user:
             raise InvalidCredentialsError()

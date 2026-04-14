@@ -7,7 +7,7 @@ from email.message import EmailMessage
 import aiosmtplib
 
 from app.core.config import settings
-from app.core.redis import get_redis_client
+from app.core.redis import get_redis
 
 
 def _generate_code(length: int = 6) -> str:
@@ -23,7 +23,8 @@ async def send_verification_code(email: str) -> None:
     code = _generate_code()
 
     # Store in Redis with 5 minute TTL
-    redis = await get_redis_client()
+    # Use raw Redis client (not RedisClient wrapper) for simple key/value ops
+    redis = await get_redis()
     await redis.set(f"verify:{email}", code, ex=300)
 
     # Build email
@@ -53,13 +54,14 @@ async def verify_code(email: str, code: str) -> bool:
 
     Deletes the code on successful verification (one-time use).
     """
-    redis = await get_redis_client()
+    redis = await get_redis()
     stored_code = await redis.get(f"verify:{email}")
 
     if stored_code is None:
         return False
 
-    if stored_code.decode() == code:
+    # decode_responses=True in pool → values are already str, no .decode() needed
+    if stored_code == code:
         await redis.delete(f"verify:{email}")
         return True
 

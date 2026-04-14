@@ -116,9 +116,25 @@ async def logout(
 async def send_verification_code(
     request: SendCodeRequest,
 ) -> AuthActionResponse:
-    """Send verification code to email via SMTP."""
+    """Send verification code to email via SMTP.
+
+    Rate-limited: one code per email per 60 seconds.
+    """
+    from app.core.redis import get_redis
+
+    # Rate limit: 60s cooldown per email
+    redis = await get_redis()
+    cooldown_key = f"send_code_cd:{request.email}"
+    if await redis.exists(cooldown_key):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="请等待 60 秒后再重新发送验证码",
+        )
+
     try:
         await send_email_code(request.email)
+        # Set 60s cooldown
+        await redis.set(cooldown_key, "1", ex=60)
         return AuthActionResponse(success=True, message=f"Code sent to {request.email}")
     except Exception as e:
         raise HTTPException(
