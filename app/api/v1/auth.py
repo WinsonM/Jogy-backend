@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user_id
 from app.core.database import get_db
 from app.core.exceptions import (
+    EmailNotVerifiedError,
     EmailTakenError,
     InvalidCredentialsError,
     InvalidTokenError,
@@ -17,6 +18,7 @@ from app.core.exceptions import (
 from app.schemas.auth import AuthActionResponse, SendCodeRequest, VerifyCodeRequest
 from app.schemas.user import (
     RefreshTokenRequest,
+    RegisterResponse,
     TokenResponse,
     UserCreate,
     UserLogin,
@@ -31,18 +33,39 @@ router = APIRouter()
 
 @router.post(
     "/register",
-    response_model=UserResponse,
+    response_model=RegisterResponse,
     status_code=status.HTTP_201_CREATED,
 )
 async def register(
     user_data: UserCreate,
     db: AsyncSession = Depends(get_db),
-) -> UserResponse:
-    """Register a new user."""
+) -> RegisterResponse:
+    """Register a new user and return JWT tokens for auto-login.
+
+    Requires the email to have been verified via POST /verify-code within
+    the last 10 minutes. This lets the client retry registration after a
+    transient failure (e.g. duplicate username) without needing the user
+    to request and type a fresh verification code.
+    """
+    from app.core.redis import get_redis
+
+    # Enforce email verification when an email is provided.
+    # (Email is optional per UserCreate schema; the frontend requires it but
+    # direct API callers could omit it.)
+    redis = await get_redis()
+    verified_key = f"email_verified:{user_data.email}" if user_data.email else None
+    if verified_key is not None:
+        verified = await redis.get(verified_key)
+        if not verified:
+            err = EmailNotVerifiedError()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"code": err.code, "message": err.message},
+            )
+
     auth_service = AuthService(db)
     try:
         user = await auth_service.register(user_data)
-        return UserResponse.model_validate(user)
     except UsernameTakenError as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -53,6 +76,20 @@ async def register(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": e.code, "message": e.message},
         )
+
+    # Consume the verification flag so it can't be reused for another account.
+    if verified_key is not None:
+        await redis.delete(verified_key)
+
+    # Issue tokens so the client can skip the separate /login round-trip.
+    tokens = auth_service.create_tokens(user.id)
+    return RegisterResponse(
+        user=UserResponse.model_validate(user),
+        access_token=tokens.access_token,
+        refresh_token=tokens.refresh_token,
+        token_type=tokens.token_type,
+        expires_in=tokens.expires_in,
+    )
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -115,12 +152,30 @@ async def logout(
 @router.post("/send-code", response_model=AuthActionResponse)
 async def send_verification_code(
     request: SendCodeRequest,
+    db: AsyncSession = Depends(get_db),
 ) -> AuthActionResponse:
     """Send verification code to email via SMTP.
 
-    Rate-limited: one code per email per 60 seconds.
+    Rejects emails that are already registered so the user gets fast feedback
+    instead of walking through the whole signup flow just to hit a 409 at the
+    end. Rate-limited: one code per email per 60 seconds.
     """
+    from sqlalchemy import select
+
     from app.core.redis import get_redis
+    from app.models.user import User
+
+    # Reject already-registered emails up front (same lookup as AuthService.register).
+    # Placed *before* the cooldown check so this error path never writes the cooldown key.
+    existing = await db.execute(select(User).where(User.email == request.email))
+    if existing.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": EmailTakenError.code,
+                "message": "此邮箱已注册，请直接登录",
+            },
+        )
 
     # Rate limit: 60s cooldown per email
     redis = await get_redis()

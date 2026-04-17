@@ -50,6 +50,13 @@ class UsernameTakenError(JogyException):
 
 class EmailTakenError(JogyException):
     """Raised when email is already taken."""
-    
+
     code = "EMAIL_TAKEN"
     message = "Email already exists"
+
+
+class EmailNotVerifiedError(JogyException):
+    """Raised when trying to register with an email that was not verified first."""
+
+    code = "EMAIL_NOT_VERIFIED"
+    message = "请先验证邮箱"

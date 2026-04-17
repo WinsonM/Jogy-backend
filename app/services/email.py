@@ -53,6 +53,12 @@ async def verify_code(email: str, code: str) -> bool:
     """Verify a code against the one stored in Redis.
 
     Deletes the code on successful verification (one-time use).
+    Also writes a 10-minute "email_verified" flag so the /register endpoint
+    can confirm the email was verified recently without requiring the
+    caller to pass the (already-consumed) code again. This bridges the
+    gap between verify-code and the subsequent register call, and survives
+    transient register failures (e.g. duplicate username) so the user can
+    retry registration without re-sending a new code.
     """
     redis = await get_redis()
     stored_code = await redis.get(f"verify:{email}")
@@ -63,6 +69,8 @@ async def verify_code(email: str, code: str) -> bool:
     # decode_responses=True in pool → values are already str, no .decode() needed
     if stored_code == code:
         await redis.delete(f"verify:{email}")
+        # 10-minute window for the subsequent /register call
+        await redis.set(f"email_verified:{email}", "1", ex=600)
         return True
 
     return False

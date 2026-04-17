@@ -86,6 +86,20 @@ class TokenResponse(BaseModel):
     expires_in: int  # seconds
 
 
+class RegisterResponse(BaseModel):
+    """Schema for registration response.
+
+    Returns both the created user and the JWT tokens so the client can
+    auto-login without a separate /login round-trip.
+    """
+
+    user: UserResponse
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    expires_in: int  # seconds
+
+
 class RefreshTokenRequest(BaseModel):
     """Schema for token refresh request."""
 
