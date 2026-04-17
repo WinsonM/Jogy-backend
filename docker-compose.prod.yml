@@ -25,13 +25,27 @@ services:
     image: redis:7-alpine
     container_name: jogy-redis
     restart: always
-    command: redis-server --requirepass ${REDIS_PASSWORD:-}
+    # Shell wrapper so we can conditionally apply --requirepass.
+    # A bare `--requirepass` (empty password) makes Redis fail with
+    # "wrong number of arguments" because Compose's shell-form
+    # tokenization drops empty arguments.
+    command: >
+      sh -c '
+      if [ -n "$$REDIS_PASSWORD" ]; then
+        exec redis-server --requirepass "$$REDIS_PASSWORD";
+      else
+        exec redis-server;
+      fi
+      '
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     ports:
       - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      # Works in both auth / no-auth modes.
+      test: ["CMD-SHELL", "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping; else redis-cli ping; fi"]
       interval: 10s
       timeout: 5s
       retries: 5
