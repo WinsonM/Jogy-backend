@@ -81,13 +81,9 @@ def upgrade() -> None:
         ),
     )
 
-    # Create spatial index on posts.location
-    op.create_index(
-        "idx_posts_location",
-        "posts",
-        ["location"],
-        postgresql_using="gist",
-    )
+    # Note: GeoAlchemy2 auto-creates a GiST index named idx_posts_location
+    # on the Geometry column during create_table above, so we don't create it
+    # again here (doing so raises DuplicateTableError).
     op.create_index("idx_posts_created_at", "posts", ["created_at"])
 
     # Create comments table
