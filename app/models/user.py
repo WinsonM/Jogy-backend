@@ -74,6 +74,7 @@ class User(Base, UUIDMixin, TimestampMixin):
     comments: Mapped[list["Comment"]] = relationship(
         "Comment",
         back_populates="user",
+        foreign_keys="Comment.user_id",
         lazy="selectin",
     )
     likes: Mapped[list["Like"]] = relationship(

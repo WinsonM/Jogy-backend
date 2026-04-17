@@ -70,6 +70,7 @@ class Comment(Base, UUIDMixin, TimestampMixin):
     user: Mapped[Optional["User"]] = relationship(
         "User",
         back_populates="comments",
+        foreign_keys=[user_id],
     )
     # Self-referential relationship for parent
     parent: Mapped[Optional["Comment"]] = relationship(
