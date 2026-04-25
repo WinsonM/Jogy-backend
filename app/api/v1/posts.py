@@ -6,6 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_current_user, get_current_user_id, get_current_user_id_optional
 from app.core.database import get_db
@@ -81,6 +82,8 @@ async def search_posts(
 ) -> list[PostResponse]:
     """Search posts by content, title, or address."""
     like_query = f"%{q}%"
+    # selectinload(Post.author) — _post_to_response_fast accesses post.author;
+    # async SQLAlchemy 不允许隐式 lazy load。
     result = await db.execute(
         select(Post)
         .where(
@@ -92,6 +95,7 @@ async def search_posts(
         )
         .order_by(Post.created_at.desc())
         .limit(limit)
+        .options(selectinload(Post.author))
     )
     posts = result.scalars().all()
     discover_service = DiscoverService(db)

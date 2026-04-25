@@ -6,6 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_current_user_id_optional
 from app.core.database import get_db
@@ -36,6 +37,8 @@ async def global_search(
     )
     users = users_result.scalars().all()
 
+    # selectinload(Post.author) — _post_to_response 最终走 _post_to_response_fast，
+    # 后者访问 post.author；async session 需要预先 eager load。
     posts_result = await db.execute(
         select(Post)
         .where(
@@ -47,15 +50,12 @@ async def global_search(
         )
         .order_by(Post.created_at.desc())
         .limit(limit)
+        .options(selectinload(Post.author))
     )
     posts = posts_result.scalars().all()
     discover_service = DiscoverService(db)
 
     return GlobalSearchResponse(
         users=[UserResponse.model_validate(user) for user in users],
-        posts=[
-            await discover_service._post_to_response(post, current_user_id)
-            for post in posts
-        ],
+        posts=[await discover_service._post_to_response(post, current_user_id) for post in posts],
     )
-

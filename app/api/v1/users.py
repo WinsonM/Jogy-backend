@@ -6,6 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_current_user, get_current_user_id_optional
 from app.core.database import get_db
@@ -93,8 +94,15 @@ async def get_user_posts(
     db: AsyncSession = Depends(get_db),
 ) -> list[PostResponse]:
     """Get posts created by user."""
+    # selectinload(Post.author) is REQUIRED — _batch_posts_to_response →
+    # _post_to_response_fast accesses post.author. Async SQLAlchemy disallows
+    # implicit lazy loading on a relationship; without eager load this raises
+    # MissingGreenlet → 500 → frontend Future.wait fails → profile shows empty.
     result = await db.execute(
-        select(Post).where(Post.author_id == user_id).order_by(Post.created_at.desc())
+        select(Post)
+        .where(Post.author_id == user_id)
+        .order_by(Post.created_at.desc())
+        .options(selectinload(Post.author))
     )
     posts = result.scalars().all()
     return await _batch_posts_to_response(db, posts, current_user_id)
@@ -112,6 +120,7 @@ async def get_user_liked_posts(
         .join(Like, Like.post_id == Post.id)
         .where(Like.user_id == user_id)
         .order_by(Like.created_at.desc())
+        .options(selectinload(Post.author))
     )
     posts = result.scalars().all()
     return await _batch_posts_to_response(db, posts, current_user_id)
@@ -129,6 +138,7 @@ async def get_user_favorited_posts(
         .join(PostFavorite, PostFavorite.post_id == Post.id)
         .where(PostFavorite.user_id == user_id)
         .order_by(PostFavorite.created_at.desc())
+        .options(selectinload(Post.author))
     )
     posts = result.scalars().all()
     return await _batch_posts_to_response(db, posts, current_user_id)
