@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 from app.schemas.base import CamelModel, CamelORMModel
 from app.schemas.user import UserResponse
@@ -36,6 +36,22 @@ class PostCreate(PostBase):
 
     media_urls: Optional[list[str]] = Field(default_factory=list, max_length=10)
     location: LocationPoint
+    expire_at: Optional[datetime] = None
+
+
+class PostUpdate(BaseModel):
+    """Partial update for an existing post (author only).
+
+    All fields are optional. Only fields explicitly set in the request body
+    are applied (semantic of `model_dump(exclude_unset=True)`).
+
+    Note: `location`, `media_urls`, `post_type` are intentionally NOT editable
+    here — those changes imply "re-publish", not "edit".
+    """
+
+    title: Optional[str] = Field(None, max_length=100)
+    content_text: Optional[str] = Field(None, min_length=1, max_length=5000)
+    address_name: Optional[str] = Field(None, max_length=500)
     expire_at: Optional[datetime] = None
 
 

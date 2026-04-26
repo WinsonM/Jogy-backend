@@ -17,6 +17,7 @@ from app.schemas.post import (
     PostDiscoverRequest,
     PostDiscoverResponse,
     PostResponse,
+    PostUpdate,
 )
 from app.services.discover import DiscoverService
 
@@ -117,6 +118,49 @@ async def get_post(
             detail="Post not found",
         )
     return post
+
+
+@router.patch("/{post_id}", response_model=PostResponse)
+async def update_post(
+    post_id: UUID,
+    post_update: PostUpdate,
+    current_user_id: UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> PostResponse:
+    """Update a post (author only) — partial update.
+
+    Editable fields: title / content_text / address_name / expire_at.
+    Non-editable fields (location / media_urls / post_type) require a
+    full re-publish to avoid corrupting feed history.
+    """
+    # Verify ownership before any mutation
+    result = await db.execute(
+        select(Post).where(Post.id == post_id, Post.author_id == current_user_id)
+    )
+    post = result.scalar_one_or_none()
+    if not post:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Post not found or not authorized",
+        )
+
+    # Apply only fields explicitly set in the request body
+    update_data = post_update.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(post, key, value)
+
+    await db.flush()
+    await db.refresh(post)
+
+    discover_service = DiscoverService(db)
+    response = await discover_service.get_post_by_id(post.id, current_user_id)
+    if response is None:
+        # Shouldn't happen — we just refreshed. Defensive guard.
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to load updated post",
+        )
+    return response
 
 
 @router.delete("/{post_id}", status_code=status.HTTP_204_NO_CONTENT)
