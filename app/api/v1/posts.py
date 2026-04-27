@@ -4,7 +4,7 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -94,6 +94,7 @@ async def search_posts(
                 Post.address_name.ilike(like_query),
             )
         )
+        .where((Post.expire_at.is_(None)) | (Post.expire_at > func.now()))
         .order_by(Post.created_at.desc())
         .limit(limit)
         .options(selectinload(Post.author))

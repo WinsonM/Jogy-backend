@@ -4,7 +4,7 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -20,6 +20,10 @@ from app.schemas.user import UserResponse, UserUpdate
 from app.services.discover import DiscoverService
 
 router = APIRouter()
+
+
+def _active_post_filter():
+    return (Post.expire_at.is_(None)) | (Post.expire_at > func.now())
 
 
 @router.get("/me", response_model=UserResponse)
@@ -101,6 +105,7 @@ async def get_user_posts(
     result = await db.execute(
         select(Post)
         .where(Post.author_id == user_id)
+        .where(_active_post_filter())
         .order_by(Post.created_at.desc())
         .options(selectinload(Post.author))
     )
@@ -119,6 +124,7 @@ async def get_user_liked_posts(
         select(Post)
         .join(Like, Like.post_id == Post.id)
         .where(Like.user_id == user_id)
+        .where(_active_post_filter())
         .order_by(Like.created_at.desc())
         .options(selectinload(Post.author))
     )
@@ -137,6 +143,7 @@ async def get_user_favorited_posts(
         select(Post)
         .join(PostFavorite, PostFavorite.post_id == Post.id)
         .where(PostFavorite.user_id == user_id)
+        .where(_active_post_filter())
         .order_by(PostFavorite.created_at.desc())
         .options(selectinload(Post.author))
     )

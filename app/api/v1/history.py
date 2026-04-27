@@ -18,6 +18,10 @@ from app.services.discover import DiscoverService
 router = APIRouter()
 
 
+def _active_post_filter():
+    return (Post.expire_at.is_(None)) | (Post.expire_at > func.now())
+
+
 @router.get("/me/history", response_model=HistoryListResponse)
 async def get_my_history(
     limit: int = Query(20, ge=1, le=100),
@@ -27,13 +31,18 @@ async def get_my_history(
 ) -> HistoryListResponse:
     """Get current user's browsing history."""
     total_result = await db.execute(
-        select(func.count(UserBrowsingHistory.id)).where(UserBrowsingHistory.user_id == current_user_id)
+        select(func.count(UserBrowsingHistory.id))
+        .join(Post, Post.id == UserBrowsingHistory.post_id)
+        .where(UserBrowsingHistory.user_id == current_user_id)
+        .where(_active_post_filter())
     )
     total = total_result.scalar() or 0
 
     result = await db.execute(
         select(UserBrowsingHistory)
+        .join(Post, Post.id == UserBrowsingHistory.post_id)
         .where(UserBrowsingHistory.user_id == current_user_id)
+        .where(_active_post_filter())
         .options(selectinload(UserBrowsingHistory.post).selectinload(Post.author))
         .order_by(UserBrowsingHistory.viewed_at.desc())
         .offset(offset)
@@ -63,7 +72,9 @@ async def add_my_history(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Upsert a browsing history record."""
-    post_result = await db.execute(select(Post).where(Post.id == request.post_id))
+    post_result = await db.execute(
+        select(Post).where(Post.id == request.post_id).where(_active_post_filter())
+    )
     post = post_result.scalar_one_or_none()
     if not post:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")

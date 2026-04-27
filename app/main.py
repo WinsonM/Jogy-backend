@@ -1,5 +1,8 @@
 """Jogy App Backend - FastAPI Application."""
 
+import asyncio
+import logging
+import os
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
@@ -11,15 +14,41 @@ from app.api.v1 import api_router
 from app.core.config import settings
 from app.core.middleware import RateLimitMiddleware, SignatureMiddleware
 from app.core.redis import close_redis_pool
+from app.services.cleanup import delete_expired_posts
+
+logger = logging.getLogger(__name__)
+
+
+async def _run_cleanup_once() -> None:
+    try:
+        deleted = await delete_expired_posts()
+        if deleted > 0:
+            logger.info("[cleanup] deleted %d expired posts", deleted)
+    except Exception:
+        logger.exception("[cleanup] failed")
+
+
+async def _cleanup_loop() -> None:
+    await _run_cleanup_once()
+    while True:
+        await asyncio.sleep(60 * 60)
+        await _run_cleanup_once()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan events."""
-    # Startup
-    yield
-    # Shutdown
-    await close_redis_pool()
+    cleanup_task = asyncio.create_task(_cleanup_loop(), name="cleanup_expired_posts")
+    logger.info("[startup] cleanup task started (interval=1h)")
+    try:
+        yield
+    finally:
+        cleanup_task.cancel()
+        try:
+            await cleanup_task
+        except asyncio.CancelledError:
+            pass
+        await close_redis_pool()
 
 
 # Create FastAPI application
@@ -52,8 +81,6 @@ if settings.rate_limit_middleware_enabled and not settings.debug:
 # Include API routes
 app.include_router(api_router, prefix="/api/v1")
 
-# Serve uploaded files as static files
-import os
 os.makedirs("uploads/images", exist_ok=True)
 os.makedirs("uploads/thumbnails", exist_ok=True)
 os.makedirs("uploads/files", exist_ok=True)
