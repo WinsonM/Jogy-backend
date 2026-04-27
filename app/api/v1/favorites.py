@@ -3,7 +3,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user_id
@@ -43,15 +43,11 @@ async def _create_favorite(
     db: AsyncSession,
 ) -> FavoriteToggleResponse:
     db.add(PostFavorite(user_id=user_id, post_id=post.id))
-    await db.execute(
-        update(Post)
-        .where(Post.id == post.id)
-        .values(favorites_count=Post.favorites_count + 1)
-    )
     await db.flush()
+    favorites_count = await _sync_favorites_count(post.id, db)
     return FavoriteToggleResponse(
         favorited=True,
-        favorites_count=post.favorites_count + 1,
+        favorites_count=favorites_count,
     )
 
 
@@ -61,16 +57,22 @@ async def _delete_favorite(
     db: AsyncSession,
 ) -> FavoriteToggleResponse:
     await db.delete(favorite)
-    await db.execute(
-        update(Post)
-        .where(Post.id == post.id)
-        .values(favorites_count=Post.favorites_count - 1)
-    )
     await db.flush()
+    favorites_count = await _sync_favorites_count(post.id, db)
     return FavoriteToggleResponse(
         favorited=False,
-        favorites_count=max(post.favorites_count - 1, 0),
+        favorites_count=favorites_count,
     )
+
+
+async def _sync_favorites_count(post_id: UUID, db: AsyncSession) -> int:
+    count_result = await db.execute(
+        select(func.count(PostFavorite.id)).where(PostFavorite.post_id == post_id)
+    )
+    favorites_count = int(count_result.scalar_one())
+    await db.execute(update(Post).where(Post.id == post_id).values(favorites_count=favorites_count))
+    await db.flush()
+    return favorites_count
 
 
 @router.post("/{post_id}/favorite", response_model=FavoriteToggleResponse)
@@ -97,9 +99,10 @@ async def favorite_post(
     post = await _get_post_or_404(post_id, db)
     existing = await _get_existing_favorite(post_id, current_user_id, db)
     if existing:
+        favorites_count = await _sync_favorites_count(post.id, db)
         return FavoriteToggleResponse(
             favorited=True,
-            favorites_count=post.favorites_count,
+            favorites_count=favorites_count,
         )
     return await _create_favorite(post, current_user_id, db)
 
@@ -114,9 +117,9 @@ async def unfavorite_post(
     post = await _get_post_or_404(post_id, db)
     existing = await _get_existing_favorite(post_id, current_user_id, db)
     if not existing:
+        favorites_count = await _sync_favorites_count(post.id, db)
         return FavoriteToggleResponse(
             favorited=False,
-            favorites_count=post.favorites_count,
+            favorites_count=favorites_count,
         )
     return await _delete_favorite(post, existing, db)
-

@@ -3,7 +3,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user_id
@@ -63,24 +63,24 @@ async def toggle_like(
 async def _create_like(post: Post, user_id: UUID, db: AsyncSession) -> LikeToggleResponse:
     new_like = Like(user_id=user_id, post_id=post.id)
     db.add(new_like)
-    await db.execute(
-        update(Post)
-        .where(Post.id == post.id)
-        .values(likes_count=Post.likes_count + 1)
-    )
     await db.flush()
-    return LikeToggleResponse(liked=True, likes_count=post.likes_count + 1)
+    likes_count = await _sync_likes_count(post.id, db)
+    return LikeToggleResponse(liked=True, likes_count=likes_count)
 
 
 async def _delete_like(post: Post, like: Like, db: AsyncSession) -> LikeToggleResponse:
     await db.delete(like)
-    await db.execute(
-        update(Post)
-        .where(Post.id == post.id)
-        .values(likes_count=Post.likes_count - 1)
-    )
     await db.flush()
-    return LikeToggleResponse(liked=False, likes_count=max(post.likes_count - 1, 0))
+    likes_count = await _sync_likes_count(post.id, db)
+    return LikeToggleResponse(liked=False, likes_count=likes_count)
+
+
+async def _sync_likes_count(post_id: UUID, db: AsyncSession) -> int:
+    count_result = await db.execute(select(func.count(Like.id)).where(Like.post_id == post_id))
+    likes_count = int(count_result.scalar_one())
+    await db.execute(update(Post).where(Post.id == post_id).values(likes_count=likes_count))
+    await db.flush()
+    return likes_count
 
 
 @router.put("/{post_id}/likes/me", response_model=LikeToggleResponse)
@@ -93,7 +93,8 @@ async def like_post(
     post = await _get_post_or_404(post_id, db)
     existing_like = await _get_existing_like(post_id, current_user_id, db)
     if existing_like:
-        return LikeToggleResponse(liked=True, likes_count=post.likes_count)
+        likes_count = await _sync_likes_count(post.id, db)
+        return LikeToggleResponse(liked=True, likes_count=likes_count)
     return await _create_like(post, current_user_id, db)
 
 
@@ -107,5 +108,6 @@ async def unlike_post(
     post = await _get_post_or_404(post_id, db)
     existing_like = await _get_existing_like(post_id, current_user_id, db)
     if not existing_like:
-        return LikeToggleResponse(liked=False, likes_count=post.likes_count)
+        likes_count = await _sync_likes_count(post.id, db)
+        return LikeToggleResponse(liked=False, likes_count=likes_count)
     return await _delete_like(post, existing_like, db)
