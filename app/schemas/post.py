@@ -45,14 +45,19 @@ class PostUpdate(BaseModel):
     All fields are optional. Only fields explicitly set in the request body
     are applied (semantic of `model_dump(exclude_unset=True)`).
 
-    Note: `location`, `media_urls`, `post_type` are intentionally NOT editable
-    here — those changes imply "re-publish", not "edit".
+    Note: `location` and `post_type` are intentionally NOT editable here —
+    those changes imply "re-publish", not "edit".
+
+    `media_urls` IS editable: lets author add / remove / reorder images
+    without losing post identity (likes / comments / favorites stay on
+    the same post id).
     """
 
     title: Optional[str] = Field(None, max_length=100)
     content_text: Optional[str] = Field(None, min_length=1, max_length=5000)
     address_name: Optional[str] = Field(None, max_length=500)
     expire_at: Optional[datetime] = None
+    media_urls: Optional[list[str]] = Field(None, max_length=10)
 
 
 class PostResponse(CamelORMModel):

@@ -130,9 +130,12 @@ async def update_post(
 ) -> PostResponse:
     """Update a post (author only) — partial update.
 
-    Editable fields: title / content_text / address_name / expire_at.
-    Non-editable fields (location / media_urls / post_type) require a
-    full re-publish to avoid corrupting feed history.
+    Editable fields: title / content_text / address_name / expire_at / media_urls.
+    Non-editable fields (location / post_type) require a full re-publish to
+    avoid corrupting feed history.
+
+    `media_urls` semantics: full replace — pass the complete final list. To
+    delete all images send `[]`. To keep current images, omit the field.
     """
     # Verify ownership before any mutation
     result = await db.execute(
