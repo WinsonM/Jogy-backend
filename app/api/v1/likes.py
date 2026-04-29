@@ -11,6 +11,7 @@ from app.core.database import get_db
 from app.models.like import Like
 from app.models.post import Post
 from app.schemas.like import LikeToggleResponse
+from app.services.notification import NotificationService
 
 router = APIRouter()
 
@@ -64,6 +65,7 @@ async def _create_like(post: Post, user_id: UUID, db: AsyncSession) -> LikeToggl
     new_like = Like(user_id=user_id, post_id=post.id)
     db.add(new_like)
     await db.flush()
+    await NotificationService(db).upsert_post_like_notification(post, user_id)
     likes_count = await _sync_likes_count(post.id, db)
     return LikeToggleResponse(liked=True, likes_count=likes_count)
 

@@ -10,6 +10,7 @@ from app.models.follow import Follow
 from app.models.like import Like
 from app.models.message import Message
 from app.models.message_attachment import MessageAttachment
+from app.models.notification import Notification
 from app.models.post import Post
 from app.models.post_favorite import PostFavorite
 from app.models.user import User
@@ -27,5 +28,6 @@ __all__ = [
     "ConversationMember",
     "Message",
     "MessageAttachment",
+    "Notification",
     "UserBrowsingHistory",
 ]

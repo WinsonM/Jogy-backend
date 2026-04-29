@@ -6,7 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user_id
+from app.api.deps import get_current_user_id, get_current_user_id_optional
 from app.core.database import get_db
 from app.schemas.comment import (
     CommentCreate,
@@ -70,6 +70,7 @@ async def get_comments(
     parent_id: Optional[UUID] = Query(None),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    current_user_id: Optional[UUID] = Depends(get_current_user_id_optional),
     db: AsyncSession = Depends(get_db),
 ) -> CommentListResponse:
     """
@@ -84,6 +85,7 @@ async def get_comments(
         parent_id=parent_id,
         limit=limit,
         offset=offset,
+        current_user_id=current_user_id,
     )
 
 

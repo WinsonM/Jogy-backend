@@ -14,6 +14,7 @@ from app.schemas.comment import (
     CommentListResponse,
     CommentTreeResponse,
 )
+from app.services.notification import NotificationService
 
 
 class CommentService:
@@ -86,6 +87,11 @@ class CommentService:
             .where(Post.id == post_id)
             .values(comments_count=Post.comments_count + 1)
         )
+        await NotificationService(self.db).create_post_reply_notification(
+            post=post,
+            comment=comment,
+            actor_user_id=user_id,
+        )
 
         await self.db.refresh(comment)
         return comment
@@ -96,6 +102,7 @@ class CommentService:
         parent_id: Optional[UUID] = None,
         limit: int = 20,
         offset: int = 0,
+        current_user_id: Optional[UUID] = None,
     ) -> CommentListResponse:
         """
         Get comments for a post with pagination.
@@ -103,6 +110,11 @@ class CommentService:
         If parent_id is None, returns root-level comments.
         Each comment includes top N replies.
         """
+        post_result = await self.db.execute(select(Post).where(Post.id == post_id))
+        post = post_result.scalar_one_or_none()
+        if post is None:
+            return CommentListResponse(comments=[], total=0, has_more=False)
+
         # Base query for comments at this level
         query = (
             select(Comment)
@@ -124,6 +136,13 @@ class CommentService:
             count_query = count_query.where(Comment.parent_id.is_(None))
         else:
             count_query = count_query.where(Comment.root_id == parent_id, Comment.id != parent_id)
+
+        if post.post_type == "broadcast":
+            if current_user_id is None:
+                return CommentListResponse(comments=[], total=0, has_more=False)
+            if post.author_id != current_user_id:
+                query = query.where(Comment.user_id == current_user_id)
+                count_query = count_query.where(Comment.user_id == current_user_id)
 
         total_result = await self.db.execute(count_query)
         total = total_result.scalar() or 0

@@ -7,13 +7,17 @@ from app.models.post import Post
 
 
 async def delete_expired_posts() -> int:
-    """Hard delete posts whose expire_at has passed.
+    """Hard delete expired non-broadcast posts.
 
-    Dependent rows such as comments, likes, favorites, and browsing history are
-    removed by database/ORM cascade rules.
+    Expired broadcasts are retained so notification recipients can still open
+    their own broadcast detail in a read-only state.
     """
     async with get_db_context() as db:
-        expired_filter = (Post.expire_at.isnot(None), Post.expire_at < func.now())
+        expired_filter = (
+            Post.expire_at.isnot(None),
+            Post.expire_at < func.now(),
+            Post.post_type != "broadcast",
+        )
         count = (await db.execute(select(func.count(Post.id)).where(*expired_filter))).scalar() or 0
         if count == 0:
             return 0

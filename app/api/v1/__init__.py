@@ -12,6 +12,7 @@ from app.api.v1 import (
     history,
     likes,
     location,
+    notifications,
     posts,
     qr,
     search,
@@ -33,6 +34,7 @@ api_router.include_router(favorites.router, prefix="/posts", tags=["favorites"])
 api_router.include_router(comment_likes.router, prefix="/comments", tags=["comment_likes"])
 api_router.include_router(location.router, prefix="/location", tags=["location"])
 api_router.include_router(conversations.router, prefix="/conversations", tags=["conversations"])
+api_router.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 api_router.include_router(search.router, prefix="/search", tags=["search"])
 api_router.include_router(qr.router, prefix="/qr", tags=["qr"])
 api_router.include_router(uploads.router, prefix="/uploads", tags=["uploads"])

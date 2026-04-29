@@ -6,7 +6,7 @@ from uuid import UUID
 
 from geoalchemy2.functions import ST_MakeEnvelope, ST_MakePoint, ST_SetSRID
 from geoalchemy2.shape import to_shape
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -186,10 +186,20 @@ class DiscoverService:
         current_user_id: Optional[UUID] = None,
     ) -> Optional[PostResponse]:
         """Get post by ID with optional location obfuscation."""
+        visible_filter = or_(Post.expire_at.is_(None), Post.expire_at > func.now())
+        if current_user_id is not None:
+            visible_filter = or_(
+                visible_filter,
+                and_(
+                    Post.author_id == current_user_id,
+                    Post.post_type == "broadcast",
+                ),
+            )
+
         result = await self.db.execute(
             select(Post)
             .where(Post.id == post_id)
-            .where((Post.expire_at.is_(None)) | (Post.expire_at > func.now()))
+            .where(visible_filter)
             .options(selectinload(Post.author))
         )
         post = result.scalar_one_or_none()
